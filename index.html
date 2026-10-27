@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MCGI Choir Practice App</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0b4fa8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{--blue:#0b4fa8;--gold:#d9a900;--bg:#f4f7fc;--ink:#1b2a41;--card:#fff;--line:#d8e0ee}
+@media (prefers-color-scheme:dark){:root{--bg:#10192a;--ink:#e8eefb;--card:#192640;--line:#2b3b5c}}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--blue);color:#fff;position:sticky;top:0;z-index:5}
+header img{width:36px;height:36px;border-radius:50%;background:#fff}
+header h1{font-size:1rem;margin:0;flex:1}
+header button{background:none;border:0;color:#fff;font-size:1.4rem;cursor:pointer}
+main{max-width:640px;margin:0 auto;padding:14px}
+h2{margin:.2em 0}
+small,.muted{color:#7a889f}
+input[type=search]{width:100%;padding:12px;margin:10px 0;border:1px solid var(--line);border-radius:10px;font-size:1rem;background:var(--card);color:var(--ink)}
+.row{display:flex;align-items:center;gap:10px;padding:12px;margin:6px 0;background:var(--card);border:1px solid var(--line);border-radius:10px;color:inherit;text-decoration:none}
+.row b{flex:1}
+.n{width:28px;color:var(--blue);font-weight:700}
+.tag{font-size:.75rem;padding:2px 8px;border-radius:99px;background:var(--gold);color:#222}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+button.big,.chip,.btn{padding:14px;border:2px solid var(--blue);border-radius:10px;background:var(--card);color:var(--ink);font-size:1rem;cursor:pointer}
+button.on{background:var(--blue);color:#fff}
+.chips,.btns{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.chip{padding:8px 14px;border-radius:99px}
+.player{width:100%;aspect-ratio:16/9;border:0;border-radius:10px;background:#000}
+.nav{display:flex;gap:8px;margin-top:14px}
+.nav button{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:1rem;cursor:pointer}
+.nav button:disabled{opacity:.4}
+.msg{padding:20px;text-align:center}
+.banner{background:var(--gold);color:#222;padding:6px 14px;font-size:.85rem;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <img src="icons/icon-192.png" alt="MCGI Music Department logo">
+  <h1>MCGI Choir Practice App</h1>
+  <button data-go="#/voice" title="Change voice part" aria-label="Settings">&#9881;</button>
+</header>
+<div id="banner"></div>
+<main id="main"><p class="msg">Loading&hellip;</p></main>
+
+<script>
+// ---------- Settings: the three published CSV links from your Google Sheet ----------
+const URLS = {
+  events:   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSV1pOpmjR0ZphkefcltVPr7KDgP0qZzRxiBYgvt9IAH_ohYxWjPT78b4rAZogNGFSIce418gNKKwwT/pub?gid=92480488&single=true&output=csv",
+  songs:    "https://docs.google.com/spreadsheets/d/e/2PACX-1vSV1pOpmjR0ZphkefcltVPr7KDgP0qZzRxiBYgvt9IAH_ohYxWjPT78b4rAZogNGFSIce418gNKKwwT/pub?gid=906867344&single=true&output=csv",
+  playlist: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSV1pOpmjR0ZphkefcltVPr7KDgP0qZzRxiBYgvt9IAH_ohYxWjPT78b4rAZogNGFSIce418gNKKwwT/pub?gid=1804976100&single=true&output=csv"
+};
+const PARTS = ["Soprano", "Alto", "Tenor", "Bass"];
+const TYPES = ["All", "Hymnario", "Tanging Awit"];
+
+// ---------- State ----------
+let DB = null;                                   // events, songs, playlist
+let part = localStorage.getItem("part");         // voice part saved on this device
+let filter = "All";                              // song type filter
+let files = [];                                  // buttons on the current song page
+const main = document.getElementById("main");
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const enc = encodeURIComponent;
+
+// ---------- CSV reader (handles quotes, e.g. "Widows, Widowers, ...") ----------
+function parseCSV(text) {
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i+1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(f); f = ""; }
+    else if (c === "\n") { row.push(f); rows.push(row); row = []; f = ""; }
+    else if (c !== "\r") f += c;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  const head = rows.shift().map(h => h.replace("\ufeff", "").trim());
+  return rows.filter(r => r.some(x => x.trim()))
+             .map(r => Object.fromEntries(head.map((h, i) => [h, (r[i] || "").trim()])));
+}
+
+// ---------- Load data (and keep the last good copy for offline use) ----------
+async function load() {
+  try {
+    const [e, s, p] = await Promise.all(Object.values(URLS).map(u =>
+      fetch(u).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })));
+    DB = { events: parseCSV(e), songs: parseCSV(s), playlist: parseCSV(p) };
+    localStorage.setItem("db", JSON.stringify(DB));
+  } catch (err) {
+    const saved = localStorage.getItem("db");
+    if (saved) { DB = JSON.parse(saved); document.getElementById("banner").innerHTML = '<div class="banner">Offline: showing saved data</div>'; }
+  }
+}
+
+// ---------- Data helpers ----------
+const when = e => e.Date + (e.Time ? ", " + e.Time : "");   // date, plus time if filled in
+const published = () => DB.events.filter(e => e.Status === "Published").sort((a, b) => b.Date.localeCompare(a.Date));
+function songsOf(eventName) {                    // songs of one event, in Order, with their links attached
+  const lib = Object.fromEntries(DB.songs.map(s => [s["Song title"], s]));
+  return DB.playlist.filter(r => r.Event === eventName)
+    .sort((a, b) => Number(a.Order) - Number(b.Order))
+    .map(r => lib[r["Song title"]] || { "Song title": r["Song title"] });
+}
+function embed(url) {                            // pasted Drive/YouTube link -> playable address
+  let m;
+  if (/drive\.google\.com/.test(url) && (m = url.match(/\/d\/([\w-]+)/) || url.match(/[?&]id=([\w-]+)/)))
+    return "https://drive.google.com/file/d/" + m[1] + "/preview";
+  if (m = url.match(/youtu\.be\/([\w-]{11})/) || url.match(/[?&]v=([\w-]{11})/) || url.match(/youtube\.com\/embed\/([\w-]{11})/))
+    return "https://www.youtube.com/embed/" + m[1];
+  return null;
+}
+
+// ---------- Screens ----------
+function voiceScreen() {
+  main.innerHTML = `<h2>Choose your voice part</h2><p class="muted">You can change this any time with the settings button.</p>
+    <div class="grid">${PARTS.map(p => `<button class="big ${p === part ? "on" : ""}" data-part="${p}">${p}</button>`).join("")}</div>`;
+}
+
+function homeScreen() {
+  main.innerHTML = `<h2>Events</h2><input type="search" id="q" placeholder="Search events"><div id="list"></div>`;
+  const draw = () => {
+    const q = document.getElementById("q").value.toLowerCase();
+    const list = published().filter(e => e.Event.toLowerCase().includes(q));
+    document.getElementById("list").innerHTML = list.length
+      ? list.map(e => `<a class="row" href="#/event/${enc(e.Event)}"><b>${esc(e.Event)}</b><small>${esc(when(e))}</small></a>`).join("")
+      : '<p class="msg">No events to show yet.</p>';
+  };
+  document.getElementById("q").oninput = draw; draw();
+}
+
+function eventScreen(name) {
+  const ev = DB.events.find(e => e.Event === name), songs = songsOf(name);
+  if (!ev || ev.Status !== "Published") { location.hash = ""; return; }
+  filter = "All";
+  main.innerHTML = `<a href="#/">&larr; Events</a><h2>${esc(name)}</h2><small>${esc(when(ev))}</small>` + (songs.length
+    ? `<input type="search" id="q" placeholder="Search songs">
+       <div class="chips" id="chips"></div><div id="list"></div>`
+    : '<p class="msg">This event has no songs yet.</p>');
+  if (!songs.length) return;
+  const draw = () => {
+    const q = document.getElementById("q").value.toLowerCase();
+    document.getElementById("chips").innerHTML = TYPES.map(t => `<button class="chip ${t === filter ? "on" : ""}" data-filter="${t}">${t}</button>`).join("");
+    const rows = songs.map((s, i) => [s, i])      // keep the original position number
+      .filter(([s]) => (filter === "All" || s.Type === filter) && s["Song title"].toLowerCase().includes(q));
+    document.getElementById("list").innerHTML = rows.length
+      ? rows.map(([s, i]) => `<a class="row" href="#/song/${enc(name)}/${i}"><span class="n">${i + 1}</span><b>${esc(s["Song title"])}</b>${s.Type ? `<span class="tag">${esc(s.Type)}</span>` : ""}</a>`).join("")
+      : '<p class="msg">No songs match.</p>';
+  };
+  main.redraw = draw;
+  document.getElementById("q").oninput = draw; draw();
+}
+
+function songScreen(name, i) {
+  const songs = songsOf(name), s = songs[i];
+  if (!s) { location.hash = "#/event/" + enc(name); return; }
+  files = [[part, s[part]], ["Minus one", s["Minus one"]], ["Song", s.Song], ["Choreography", s.Choreography]]
+    .map(([label, url]) => ({ label, src: url ? embed(url) : null })).filter(f => f.src);
+  main.innerHTML = `<a href="#/event/${enc(name)}">&larr; ${esc(name)}</a>
+    <h2>${esc(s["Song title"])}</h2>${s.Type ? `<span class="tag">${esc(s.Type)}</span>` : ""}
+    <div id="player" style="margin:12px 0"></div>
+    <div class="btns">${files.map((f, k) => `<button class="btn" data-play="${k}">${esc(f.label)}</button>`).join("")}</div>
+    <div class="nav">
+      <button data-go="#/event/${enc(name)}">Back</button>
+      <button data-go="#/song/${enc(name)}/${i - 1}" ${i === 0 ? "disabled" : ""}>&larr; Previous</button>
+      <button data-go="#/song/${enc(name)}/${i + 1}" ${i === songs.length - 1 ? "disabled" : ""}>Next &rarr;</button>
+    </div>`;
+  play(0);
+}
+
+function play(k) {                               // load one file into the player
+  const f = files[k], box = document.getElementById("player");
+  box.innerHTML = f ? `<iframe class="player" src="${f.src}" allow="autoplay; fullscreen" allowfullscreen></iframe>`
+                    : '<p class="msg">No files for this song yet.</p>';
+  document.querySelectorAll("[data-play]").forEach(b => b.classList.toggle("on", Number(b.dataset.play) === k));
+}
+
+// ---------- Router and clicks ----------
+function route() {
+  if (!DB) return;
+  const [view, a, b] = location.hash.slice(1).split("/").filter(Boolean).map(decodeURIComponent);
+  if (!part || view === "voice") return voiceScreen();
+  if (view === "event") return eventScreen(a);
+  if (view === "song") return songScreen(a, Number(b));
+  homeScreen();
+}
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-go],[data-part],[data-filter],[data-play],[data-reload]");
+  if (!t) return;
+  if (t.dataset.go) location.hash = t.dataset.go;
+  if (t.dataset.part) { part = t.dataset.part; localStorage.setItem("part", part); location.hash = ""; route(); }
+  if (t.dataset.filter) { filter = t.dataset.filter; main.redraw(); }
+  if (t.dataset.play) play(Number(t.dataset.play));
+  if (t.dataset.reload) location.reload();
+});
+addEventListener("hashchange", route);
+
+(async () => {
+  await load();
+  if (!DB) { main.innerHTML = '<p class="msg">Could not reach the song list. Check your connection.<br><br><button class="big" data-reload="1">Try again</button></p>'; return; }
+  route();
+})();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
