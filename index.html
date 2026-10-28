@@ -36,6 +36,11 @@ button.on{background:var(--blue);color:#fff}
 .nav button:disabled{opacity:.4}
 .msg{padding:20px;text-align:center}
 .banner{background:var(--gold);color:#222;padding:6px 14px;font-size:.85rem;text-align:center}
+.install{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--card);border-bottom:1px solid var(--line);font-size:.9rem}
+.install span{flex:1}
+.install button{padding:8px 14px;border:2px solid var(--blue);border-radius:10px;background:var(--blue);color:#fff;font-size:.9rem;cursor:pointer}
+.install button.x{background:none;color:var(--ink);border:0;padding:4px 8px;font-size:1.2rem}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -45,6 +50,11 @@ button.on{background:var(--blue);color:#fff}
   <button data-go="#/voice" title="Change voice part" aria-label="Settings">&#9881;</button>
 </header>
 <div id="banner"></div>
+<div class="install" id="install" hidden>
+  <span id="installText"></span>
+  <button id="installBtn" data-install="1">Install app</button>
+  <button class="x" data-dismiss="1" aria-label="Dismiss">&times;</button>
+</div>
 <main id="main"><p class="msg">Loading&hellip;</p></main>
 
 <script>
@@ -188,13 +198,18 @@ function route() {
   homeScreen();
 }
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-go],[data-part],[data-filter],[data-play],[data-reload]");
+  const t = e.target.closest("[data-go],[data-part],[data-filter],[data-play],[data-reload],[data-install],[data-dismiss]");
   if (!t) return;
   if (t.dataset.go) location.hash = t.dataset.go;
   if (t.dataset.part) { part = t.dataset.part; localStorage.setItem("part", part); location.hash = ""; route(); }
   if (t.dataset.filter) { filter = t.dataset.filter; main.redraw(); }
   if (t.dataset.play) play(Number(t.dataset.play));
   if (t.dataset.reload) location.reload();
+  if (t.dataset.install && installEvent) {       // Android: show Chrome's own install dialog
+    installEvent.prompt();
+    installEvent.userChoice.then(() => { installEvent = null; installBar.hidden = true; });
+  }
+  if (t.dataset.dismiss) { installBar.hidden = true; localStorage.setItem("hideInstall", "1"); }
 });
 addEventListener("hashchange", route);
 
@@ -203,6 +218,26 @@ addEventListener("hashchange", route);
   if (!DB) { main.innerHTML = '<p class="msg">Could not reach the song list. Check your connection.<br><br><button class="big" data-reload="1">Try again</button></p>'; return; }
   route();
 })();
+// ---------- Install helper ----------
+// Android (Chrome) lets the page offer an Install button. iPhone does not, so we show a hint instead.
+let installEvent = null;                         // Chrome's install prompt, saved until the button is tapped
+const installBar = document.getElementById("install");
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function showInstall(text, withButton) {
+  if (standalone || localStorage.getItem("hideInstall")) return;   // already installed, or dismissed before
+  document.getElementById("installText").textContent = text;
+  document.getElementById("installBtn").hidden = !withButton;
+  installBar.hidden = false;
+}
+addEventListener("beforeinstallprompt", e => {   // Chrome says: this app can be installed
+  e.preventDefault();
+  installEvent = e;
+  showInstall("Install this app on your phone for quick access.", true);
+});
+addEventListener("appinstalled", () => { installBar.hidden = true; });
+if (iOS) showInstall("To install: tap the Share button, then Add to Home Screen.", false);
+
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
 </script>
 </body>
