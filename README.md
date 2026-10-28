@@ -2,7 +2,7 @@
 
 A free, installable web app (PWA) for choir members to practice their songs. Each listener picks their voice part once, browses events, and opens each song's practice files in built-in players.
 
-**Live app:** https://lesterdc03.github.io/mcgi-choir-practice/
+**Live app:** https://lesterdc03.github.io/user_app/
 
 ## Features
 
