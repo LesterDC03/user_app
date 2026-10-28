@@ -40,6 +40,9 @@ button.on{background:var(--blue);color:#fff}
 .install span{flex:1}
 .install button{padding:8px 14px;border:2px solid var(--blue);border-radius:10px;background:var(--blue);color:#fff;font-size:.9rem;cursor:pointer}
 .install button.x{background:none;color:var(--ink);border:0;padding:4px 8px;font-size:1.2rem}
+footer{max-width:640px;margin:0 auto;padding:18px 14px 28px;text-align:center;font-size:.85rem;color:#7a889f}
+footer a{color:var(--blue);font-weight:600}
+@media (prefers-color-scheme:dark){footer a{color:var(--gold)}}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -56,7 +59,7 @@ button.on{background:var(--blue);color:#fff}
   <button class="x" data-dismiss="1" aria-label="Dismiss">&times;</button>
 </div>
 <main id="main"><p class="msg">Loading&hellip;</p></main>
-
+<footer>Having a problem with the app? <a id="contact" target="_blank" rel="noopener">Contact the developer</a></footer>
 <script>
 // ---------- Settings: the three published CSV links from your Google Sheet ----------
 const URLS = {
@@ -65,7 +68,9 @@ const URLS = {
   playlist: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSV1pOpmjR0ZphkefcltVPr7KDgP0qZzRxiBYgvt9IAH_ohYxWjPT78b4rAZogNGFSIce418gNKKwwT/pub?gid=1804976100&single=true&output=csv"
 };
 const PARTS = ["Soprano", "Alto", "Tenor", "Bass"];
-const TYPES = ["All", "Hymnario", "Tanging Awit"];
+const TYPES = ["All", "Hymnario", "Tanging Awit", "Adaptation/Non-original"];
+// Where listeners reach you. Change the address and subject, keep the quotes.
+const CONTACT_URL = "https://m.me/alvin.l.cruz7";
 
 // ---------- State ----------
 let DB = null;                                   // events, songs, playlist
@@ -237,8 +242,9 @@ addEventListener("beforeinstallprompt", e => {   // Chrome says: this app can be
 });
 addEventListener("appinstalled", () => { installBar.hidden = true; });
 if (iOS) showInstall("To install: tap the Share button, then Add to Home Screen.", false);
-
+document.getElementById("contact").href = CONTACT_URL;   // fill in the footer link from the settings
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+
 </script>
 </body>
 </html>
